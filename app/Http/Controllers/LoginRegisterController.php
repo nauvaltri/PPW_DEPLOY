@@ -8,6 +8,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use App\Mail\RegisterEmail;
+use Illuminate\Support\Facades\Mail;
 
 
 class LoginRegisterController extends Controller
@@ -51,6 +53,8 @@ class LoginRegisterController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password)
         ]);
+
+        Mail::to($request->email)->send(new RegisterEmail($request));
 
         $credentials = $request->only('email', 'password');
         Auth::attempt($credentials);
