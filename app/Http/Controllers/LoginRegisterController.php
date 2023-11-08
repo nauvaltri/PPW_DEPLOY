@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Mail\RegisterEmail;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\File;
+use Intervention\Image\Facades\Image;
+use Illuminate\Support\Facades\Storage;
 
 
 class LoginRegisterController extends Controller
@@ -20,7 +23,7 @@ class LoginRegisterController extends Controller
     public function __construct()
     {
         $this->middleware('guest')->except([
-            'logout', 'dashboard'
+            'logout', 'dashboard', 'dashboards', 'edit', 'update', 'delete'
         ]);
     }
 
@@ -45,13 +48,58 @@ class LoginRegisterController extends Controller
         $request->validate([
             'name' => 'required|string|max:250',
             'email' => 'required|email|max:250|unique:users',
-            'password' => 'required|min:8|confirmed'
+            'password' => 'required|min:8|confirmed',
+            'image_profile' => 'image|nullable|max:1999'
         ]);
+
+        if ($request->hasFile('image_profile')) {
+
+            $image = $request->file('image_profile');
+
+            $folderPathOriginal = public_path('storage/photos/original');
+            $folderPathThumbnail = public_path('storage/photos/thumbnail');
+            $folderPathSquare = public_path('storage/photos/square');
+
+            if (!File::isDirectory($folderPathOriginal)) {
+                File::makeDirectory($folderPathOriginal, 0777, true, true);
+            }
+            if (!File::isDirectory($folderPathThumbnail)) {
+                File::makeDirectory($folderPathThumbnail, 0777, true, true);
+            }
+            if (!File::isDirectory($folderPathSquare)) {
+                File::makeDirectory($folderPathSquare, 0777, true, true);
+            }
+
+            $filenameWithExt = $request->file('image_profile')->getClientOriginalName();
+            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
+            $extension = $request->file('image_profile')->getClientOriginalExtension();
+            $filenameSimpan = $filename . '_' . time() . '.' . $extension;
+
+            // Simpan gambar asli
+            $path = $request->file('image_profile')->storeAs('photos/original', $filenameSimpan);
+
+            // Buat thumbnail dengan lebar dan tinggi yang diinginkan
+            $thumbnailPath = public_path('storage/photos/thumbnail/' . $filenameSimpan);
+            Image::make($image)
+                ->fit(150, 150)
+                ->save($thumbnailPath);
+
+            // Buat versi persegi dengan lebar dan tinggi yang sama
+            $squarePath = public_path('storage/photos/square/' . $filenameSimpan);
+            Image::make($image)
+                ->fit(300, 300)
+                ->save($squarePath);
+
+            $path = $filenameSimpan;
+        } else {
+            $path = null;
+        }
 
         User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => Hash::make($request->password)
+            'password' => Hash::make($request->password),
+            'image_profile' => $filenameSimpan
         ]);
 
         Mail::to($request->email)->send(new RegisterEmail($request));
@@ -105,7 +153,8 @@ class LoginRegisterController extends Controller
     public function dashboard()
     {
         if (Auth::check()) {
-            return view('home2');
+            $datas = User::all();
+            return view('auth.dashboard', compact('datas'));
         }
 
         return redirect()->route('login')
@@ -127,5 +176,101 @@ class LoginRegisterController extends Controller
         $request->session()->regenerateToken();
         return redirect()->route('login')
             ->withSuccess('You have logged out successfully!');;
+    }
+
+    public function edit(Request $request, String $id)
+    {
+
+        $accounts = User::find($id)->first();
+        return view('auth.edit', compact('accounts'));
+    }
+
+    public function update(Request $request, String $id)
+    {
+
+        $accounts = User::findOrFail($id);
+
+        if ($request->hasFile('image_profile')) {
+            $filenameWithExt = $request->file('image_profile')->getClientOriginalName();
+            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
+            $extension = $request->file('image_profile')->getClientOriginalExtension();
+            $filenameSimpan = $filename . '_' . time() . '.' . $extension;
+
+            $photo = $accounts->image_profile;
+
+            // Hapus gambar asli
+            $originalPath = public_path('storage/photos/original/' . $photo);
+            if (File::exists($originalPath)) {
+                File::delete($originalPath);
+            }
+            //simpan gambar asli
+            $path = $request->file('image_profile')->storeAs('photos/original', $filenameSimpan);
+
+            // Hapus gambar thumbnail
+            $thumbnailPath = public_path('storage/photos/thumbnail/' . $photo);
+            if (File::exists($thumbnailPath)) {
+                File::delete($thumbnailPath);
+            }
+
+            // Buat thumbnail dengan lebar dan tinggi yang diinginkan
+            $thumbnailPath = public_path('storage/photos/thumbnail/' . $filenameSimpan);
+            Image::make($request->image_profile)
+                ->fit(150, 150)
+                ->save($thumbnailPath);
+
+            // Hapus gambar square
+            $squarePath = public_path('storage/photos/square/' . $photo);
+            if (File::exists($squarePath)) {
+                File::delete($squarePath);
+            }
+
+            // Buat versi square dengan lebar dan tinggi yang sama
+            $squarePath = public_path('storage/photos/square/' . $filenameSimpan);
+            Image::make($request->image_profile)
+                ->fit(300, 300)
+                ->save($squarePath);
+
+            $path = $filenameSimpan;
+        }
+
+        $accounts->update([
+            'name'   => $request->name,
+            'email'   => $request->email,
+            'image_profile' => $filenameSimpan
+        ]);
+
+        return redirect()->route('dashboard')
+            ->withSuccess('Profil berhasil terupdate.');
+    }
+
+    public function delete(String $id)
+    {
+
+        $accounts = User::find($id);
+
+        $photo = $accounts->image_profile;
+
+        // Hapus gambar asli
+        $originalPath = public_path('storage/photos/original/' . $photo);
+        if (File::exists($originalPath)) {
+            File::delete($originalPath);
+        }
+        // Hapus gambar thumbnail
+        $thumbnailPath = public_path('storage/photos/thumbnail/' . $photo);
+        if (File::exists($thumbnailPath)) {
+            File::delete($thumbnailPath);
+        }
+        // Hapus gambar square
+        $squarePath = public_path('storage/photos/square/' . $photo);
+        if (File::exists($squarePath)) {
+            File::delete($squarePath);
+        }
+
+        $accounts->update([
+            'image_profile'     => null,
+        ]);
+
+        return redirect()->route('dashboard')
+            ->withSuccess('gambar berhasil di hapus.');
     }
 }
