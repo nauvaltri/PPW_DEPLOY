@@ -154,7 +154,7 @@ class LoginRegisterController extends Controller
     {
         if (Auth::check()) {
             $datas = User::all();
-            return view('auth.dashboard', compact('datas'));
+            return view('home2', compact('datas'));
         }
 
         return redirect()->route('login')
