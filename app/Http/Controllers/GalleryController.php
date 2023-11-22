@@ -5,21 +5,25 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Post;
+use GuzzleHttp\Client;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Validator;
 
 class GalleryController extends Controller
 {
+
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $data = array(
-            'id' => "posts",
-            'menu' => 'Gallery',
-            'galleries' => Post::where('picture', '!=', '')->whereNotNull('picture')->orderBy('created_at', 'desc')->paginate(30)
-        );
-        return view('gallery.index')->with($data);
+        $client = new Client();
+        $url =  "http://localhost:8000/api/gallery";
+        $response = $client->request('GET', $url);
+        $content = $response->getBody()->getContents();
+        $content_array = json_decode($content, true);
+        $galleries = $content_array['data']['data'];
+        return view('gallery.index', compact('galleries'));
     }
 
     /**
@@ -35,32 +39,43 @@ class GalleryController extends Controller
      */
     public function store(Request $request)
     {
-        $this->validate($request, [
-            'title' => 'required|max:255',
-            'description' => 'required',
-            'picture' => 'image|nullable|max:1999'
+
+        $title = $request->input('title');
+        $description = $request->input('description');
+        $picture = $request->file('picture');
+
+        $parameters = [
+            'title' => $title,
+            'description' => $description,
+            'picture' => $picture,
+        ];
+
+        $client = new Client();
+        $url = "http://localhost:8000/api/gallery/store";
+        $response = $client->request('POST', $url, [
+            'multipart' => [
+                [
+                    'name' => 'title',
+                    'contents' => $title,
+                ],
+                [
+                    'name' => 'description',
+                    'contents' => $description,
+                ],
+                [
+                    'name' => 'picture',
+                    'contents' => fopen($picture->getPathname(), 'r'),
+                    'filename' => $picture->getClientOriginalName(),
+                ],
+            ],
         ]);
-        if ($request->hasFile('picture')) {
-            $filenameWithExt = $request->file('picture')->getClientOriginalName();
-            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
-            $extension = $request->file('picture')->getClientOriginalExtension();
-            $basename = uniqid() . time();
-            $smallFilename = "small_{$basename}.{$extension}";
-            $mediumFilename = "medium_{$basename}.{$extension}";
-            $largeFilename = "large_{$basename}.{$extension}";
-            $filenameSimpan = "{$basename}.{$extension}";
-            $path = $request->file('picture')->storeAs('posts_image', $filenameSimpan);
-        } else {
-            $filenameSimpan = 'noimage.png';
-        }
-        // dd($request->input());
-        $post = new Post;
-        $post->picture = $filenameSimpan;
-        $post->title = $request->input('title');
-        $post->description = $request->input('description');
-        $post->save();
-        return redirect('gallery')->with('success', 'Berhasil menambahkan data baru');
+
+        // $content = $response->getBody()->getContents();
+        // $content_array = json_decode($content, true);
+        // $galleries = $content_array;
+        return redirect()->route('gallery.index');
     }
+
 
     /**
      * Display the specified resource.
@@ -91,7 +106,6 @@ class GalleryController extends Controller
         ]);
 
         $photo = Post::find($id);
-        // dd($photo);
         if ($request->hasFile('picture')) {
             $filenameWithExt = $request->file('picture')->getClientOriginalName();
             $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
